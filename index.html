@@ -85,62 +85,48 @@ function instalarApp() {
   });
 }
 </script>
-<!-- Firebase SDK -->
-<script type="module">
-  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-  import { getFirestore, doc, onSnapshot, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+<!-- Sync via Firebase REST API (sem SDK, sem CORS issues) -->
+<script>
+(function(){
+  const PROJECT  = 'estoque-gde';
+  const API_KEY  = 'AIzaSyDPmLUYAw9TUaSAGdKgVzIBdWuDDvLGrl0';
+  const BASE_URL = 'https://firestore.googleapis.com/v1/projects/' + PROJECT + '/databases/(default)/documents/posto/estado';
 
-  const firebaseConfig = {
-    apiKey: "AIzaSyDPmLUYAw9TUaSAGdKgVzIBdWuDDvLGrl0",
-    authDomain: "estoque-gde.firebaseapp.com",
-    projectId: "estoque-gde",
-    storageBucket: "estoque-gde.firebasestorage.app",
-    messagingSenderId: "155835118873",
-    appId: "1:155835118873:web:81fdbc5a2ef14320ad4188"
-  };
-
-  const app = initializeApp(firebaseConfig);
-  const db  = getFirestore(app);
-  const DOC = doc(db, 'posto', 'estado');
-
-  let _ignoreNext = false; // evita loop: quando eu mesmo salvo, ignoro o evento
-
-  // Salva state no Firestore
   window.fbSalvar = async function(st) {
-    try {
-      _ignoreNext = true;
-      await setDoc(DOC, { payload: JSON.stringify(st), ts: Date.now() });
-    } catch(e) {
-      console.warn('Firebase salvar:', e);
+    const payload = JSON.stringify(st);
+    const body = {
+      fields: {
+        payload: { stringValue: payload },
+        ts:      { integerValue: String(Date.now()) }
+      }
+    };
+    const resp = await fetch(BASE_URL + '?key=' + API_KEY, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error('HTTP ' + resp.status + ': ' + err);
     }
   };
 
-  // Carrega state do Firestore (uma vez, no init)
   window.fbCarregar = async function() {
     try {
-      const snap = await getDoc(DOC);
-      if (snap.exists()) {
-        const data = snap.data();
-        return data.payload ? JSON.parse(data.payload) : null;
-      }
+      const resp = await fetch(BASE_URL + '?key=' + API_KEY);
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      const val  = data.fields && data.fields.payload && data.fields.payload.stringValue;
+      return val ? JSON.parse(val) : null;
     } catch(e) {
-      console.warn('Firebase carregar:', e);
+      console.warn('Carregar erro:', e);
+      return null;
     }
-    return null;
   };
-
-  // Escuta mudanças em tempo real
-  onSnapshot(DOC, (snap) => {
-    if (!snap.exists()) return;
-    if (_ignoreNext) { _ignoreNext = false; return; }
-    try {
-      const remoto = JSON.parse(snap.data().payload || 'null');
-      if (remoto && window._fbSyncCallback) window._fbSyncCallback(remoto);
-    } catch(e) {}
-  });
 
   window._fbPronto = true;
   if (window._fbOnPronto) window._fbOnPronto();
+})();
 </script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
